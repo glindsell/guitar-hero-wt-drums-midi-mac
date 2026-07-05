@@ -1,3 +1,6 @@
+import argparse
+import sys
+
 import pygame
 import mido
 
@@ -12,12 +15,29 @@ BUTTON_TO_NOTE = {
 }
 
 
-def find_iac_output():
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Bridge Guitar Hero World Tour drums to MIDI via IAC."
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print controller, MIDI, and pad-hit debug output.",
+    )
+    return parser.parse_args()
+
+
+def log(debug, message):
+    if debug:
+        print(message)
+
+
+def find_iac_output(debug):
     outputs = mido.get_output_names()
 
-    print("MIDI outputs:")
+    log(debug, "MIDI outputs:")
     for name in outputs:
-        print(f"  {name}")
+        log(debug, f"  {name}")
 
     for name in outputs:
         if "iac" in name.lower():
@@ -51,22 +71,25 @@ def send_note_off(midi_out, note):
     )
 
 
-def handle_event(event, midi_out):
+def handle_event(event, midi_out, debug):
     if event.type == pygame.JOYBUTTONDOWN:
         note = BUTTON_TO_NOTE.get(event.button)
 
         if note is not None:
             send_note_on(midi_out, note)
-            print(f"button {event.button} → note_on {note}")
+            log(debug, f"button {event.button} → note_on {note}")
 
     elif event.type == pygame.JOYBUTTONUP:
         note = BUTTON_TO_NOTE.get(event.button)
 
         if note is not None:
             send_note_off(midi_out, note)
+            log(debug, f"button {event.button} → note_off {note}")
 
 
 def main():
+    args = parse_args()
+
     pygame.init()
     pygame.joystick.init()
 
@@ -76,38 +99,40 @@ def main():
     joy = pygame.joystick.Joystick(0)
     joy.init()
 
-    print(f"Using controller: {joy.get_name()}")
-    print(
-        f"Buttons: {joy.get_numbuttons()}, "
-        f"axes: {joy.get_numaxes()}, "
-        f"hats: {joy.get_numhats()}"
+    log(args.debug, f"Using controller: {joy.get_name()}")
+    log(
+        args.debug,
+        (
+            f"Buttons: {joy.get_numbuttons()}, "
+            f"axes: {joy.get_numaxes()}, "
+            f"hats: {joy.get_numhats()}"
+        ),
     )
 
     # Clear startup noise like JoyDeviceAdded / AudioDeviceAdded.
     pygame.event.clear()
 
-    output_name = find_iac_output()
+    output_name = find_iac_output(args.debug)
     midi_out = mido.open_output(output_name)
 
-    print(f"Sending MIDI to: {output_name}")
-    print("Select a GarageBand Software Instrument drum kit track, then hit the pads.")
-    print("Press Ctrl+C to stop.\n")
+    log(args.debug, f"Sending MIDI to: {output_name}")
+    log(args.debug, "Select a GarageBand Software Instrument drum kit track, then hit the pads.")
+    log(args.debug, "Press Ctrl+C to stop.\n")
 
     try:
         while True:
-            # Event-driven: wait until pygame receives an event.
-            # The timeout prevents macOS/SDL from trapping Ctrl+C forever.
+            # Event-driven wait with timeout so Ctrl+C remains reliable.
             event = pygame.event.wait(100)
 
             if event.type != pygame.NOEVENT:
-                handle_event(event, midi_out)
+                handle_event(event, midi_out, args.debug)
 
-            # Drain any extra queued events, e.g. very quick button down/up pairs.
+            # Drain any extra queued events, e.g. quick button down/up pairs.
             for queued_event in pygame.event.get():
-                handle_event(queued_event, midi_out)
+                handle_event(queued_event, midi_out, args.debug)
 
     except KeyboardInterrupt:
-        print("\nStopping MIDI bridge.")
+        log(args.debug, "\nStopping MIDI bridge.")
 
     finally:
         # Avoid stuck notes in GarageBand.
@@ -119,4 +144,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
