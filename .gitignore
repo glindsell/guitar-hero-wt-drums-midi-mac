@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+ghdrums/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
